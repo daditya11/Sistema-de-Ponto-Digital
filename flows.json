@@ -1,0 +1,736 @@
+[
+    {
+        "id": "860da52be7e9f978",
+        "type": "tab",
+        "label": "FINAL TASK IOT",
+        "disabled": false,
+        "info": "",
+        "env": []
+    },
+    {
+        "id": "06dc07af8e71d8b7",
+        "type": "mqtt in",
+        "z": "860da52be7e9f978",
+        "d": true,
+        "name": "aditya location",
+        "topic": "owntracks/user/6722C2A8-0EF6-42BF-A72D-44BCA5197109",
+        "qos": "1",
+        "datatype": "auto-detect",
+        "broker": "890d33631a4881ab",
+        "nl": false,
+        "rap": true,
+        "rh": 0,
+        "inputs": 0,
+        "x": 70,
+        "y": 40,
+        "wires": [
+            [
+                "bc783eb4404ebad9"
+            ]
+        ]
+    },
+    {
+        "id": "eb57c2c8eae8d101",
+        "type": "debug",
+        "z": "860da52be7e9f978",
+        "name": "debug 12",
+        "active": true,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "payload",
+        "targetType": "msg",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 680,
+        "y": 20,
+        "wires": []
+    },
+    {
+        "id": "bc783eb4404ebad9",
+        "type": "function",
+        "z": "860da52be7e9f978",
+        "name": "function 13",
+        "func": "// Function 13 – Geofence + Persistent Check-IN/OUT Log (no clearing on re-entry)\n\nlet payload = msg.payload;\nlet now = payload.tst || payload.timestamp || Math.floor(Date.now() / 1000);\n\n// Preserve lat/lon\npayload.lat = payload.lat || msg.lat;\npayload.lon = payload.lon || msg.lon;\n\n// University geofence\nconst workLat = 41.796583;\nconst workLon = -6.769472;\nconst radius = 50; // meters\n\n// Distance helper\nfunction dist(lat1, lon1, lat2, lon2) {\n    const R = 6371e3;\n    const toRad = v => v * Math.PI / 180;\n    const dLat = toRad(lat2 - lat1), dLon = toRad(lon2 - lon1);\n    const a = Math.sin(dLat / 2) ** 2 +\n        Math.cos(toRad(lat1)) *\n        Math.cos(toRad(lat2)) *\n        Math.sin(dLon / 2) ** 2;\n    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));\n}\n\n// Compute current status\nlet currStatus = dist(payload.lat, payload.lon, workLat, workLon) <= radius\n    ? \"INSIDE\"\n    : \"OUTSIDE\";\n\n// Load previous state from flow context\nlet state = flow.get(\"state\") || {\n    status: null,\n    lastCheckIn: null,\n    log: []\n};\n\n// Only record when status actually changes\nif (state.status !== currStatus) {\n    if (currStatus === \"INSIDE\") {\n        // Arrived\n        state.lastCheckIn = now;\n        state.log.push({ event: \"Check-IN\", time: now });\n    }\n    else if (currStatus === \"OUTSIDE\" && state.lastCheckIn) {\n        // Left\n        state.log.push({ event: \"Check-OUT\", time: now });\n        state.lastCheckIn = null;\n    }\n}\n\n// Update and persist state\nstate.status = currStatus;\nflow.set(\"state\", state);\n\n// Debug\nnode.warn(`Status changed → ${currStatus}. Total events: ${state.log.length}`);\n\n// Final payload\nmsg.payload = {\n    currentStatus: currStatus,\n    timestamp: now,\n    readableTime: new Date(now * 1000).toLocaleString(),\n    log: state.log,\n    lat: payload.lat,\n    lon: payload.lon,\n    distanceFromWork: Math.floor(dist(payload.lat, payload.lon, workLat, workLon))\n};\n\nreturn msg;",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 270,
+        "y": 80,
+        "wires": [
+            [
+                "eb57c2c8eae8d101",
+                "ce03fb0ebe09a296",
+                "6b84d0a40035babc",
+                "1882bf8bd675f954",
+                "2cc9231e2ddbe164",
+                "abc9db6fc285ec0e"
+            ]
+        ]
+    },
+    {
+        "id": "ce03fb0ebe09a296",
+        "type": "ui_text",
+        "z": "860da52be7e9f978",
+        "group": "e100234ed5498555",
+        "order": 0,
+        "width": 0,
+        "height": 0,
+        "name": "",
+        "label": "Current Status",
+        "format": "{{msg.payload.currentStatus}}",
+        "layout": "row-spread",
+        "className": "",
+        "style": false,
+        "font": "",
+        "fontSize": 16,
+        "color": "#000000",
+        "x": 660,
+        "y": 60,
+        "wires": []
+    },
+    {
+        "id": "0876f674369b1172",
+        "type": "ui_table",
+        "z": "860da52be7e9f978",
+        "group": "61ca522673ac8241",
+        "name": "Check-in/Check-out Logs",
+        "order": 0,
+        "width": "6",
+        "height": "4",
+        "columns": [],
+        "outputs": 0,
+        "cts": false,
+        "x": 770,
+        "y": 100,
+        "wires": []
+    },
+    {
+        "id": "6b84d0a40035babc",
+        "type": "function",
+        "z": "860da52be7e9f978",
+        "name": "format log for table",
+        "func": "let payload = msg.payload;\n\n// If no log array, return empty table\nif (!payload.log || !Array.isArray(payload.log)) {\n    msg.payload = [];\n    return msg;\n}\n\nlet entries = payload.log;\nlet rows = [];\n\n// Walk through log, pairing each Check-IN with the next Check-OUT\nfor (let i = 0; i < entries.length; i++) {\n    if (entries[i].event === \"Check-IN\") {\n        let inTime = entries[i].time;\n        let outTime = null;\n\n        // If the very next entry is a Check-OUT, grab its time\n        if (i + 1 < entries.length && entries[i + 1].event === \"Check-OUT\") {\n            outTime = entries[i + 1].time;\n        }\n\n        rows.push({\n            \"Check-IN\": new Date(inTime * 1000).toLocaleString(),\n            \"Check-OUT\": outTime\n                ? new Date(outTime * 1000).toLocaleString()\n                : \"\"\n        });\n    }\n}\n\nmsg.payload = rows;\nreturn msg;\n",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 530,
+        "y": 100,
+        "wires": [
+            [
+                "0876f674369b1172"
+            ]
+        ]
+    },
+    {
+        "id": "1882bf8bd675f954",
+        "type": "function",
+        "z": "860da52be7e9f978",
+        "name": "function 14",
+        "func": "const payload = msg.payload;\n\nmsg.payload = {\n    name: \"Aditya\",  // या कोई dynamic पहचान\n    lat: payload.lat,\n    lon: payload.lon,\n    icon: \"fa-user\",   // या कोई और FontAwesome icon\n    iconColor: (payload.currentStatus === \"INSIDE\") ? \"green\" : \"red\",\n    layer: \"location\", // custom layer group\n    status: payload.currentStatus || \"UNKNOWN\"\n};\n\nreturn msg;\n\n\n\n",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 490,
+        "y": 140,
+        "wires": [
+            [
+                "9508d34c7f1d651f"
+            ]
+        ]
+    },
+    {
+        "id": "c3525deb04013ab4",
+        "type": "worldmap",
+        "z": "860da52be7e9f978",
+        "name": "",
+        "lat": "41.7967",
+        "lon": "-6.769569",
+        "zoom": "17",
+        "layer": "OSMG",
+        "cluster": "",
+        "maxage": "",
+        "usermenu": "show",
+        "layers": "show",
+        "panit": "false",
+        "panlock": "false",
+        "zoomlock": "false",
+        "hiderightclick": "false",
+        "coords": "none",
+        "showgrid": "false",
+        "showruler": "false",
+        "allowFileDrop": "false",
+        "path": "/worldmap",
+        "overlist": "DR,CO,RA,DN",
+        "maplist": "OSMG,OSMC,EsriC,EsriS,UKOS",
+        "mapname": "",
+        "mapurl": "",
+        "mapopt": "",
+        "mapwms": false,
+        "x": 840,
+        "y": 200,
+        "wires": []
+    },
+    {
+        "id": "e78ea873fc694f48",
+        "type": "ui_template",
+        "z": "860da52be7e9f978",
+        "group": "a3df0cc256300f37",
+        "name": "",
+        "order": 0,
+        "width": "6",
+        "height": "24",
+        "format": "<iframe src=\"/worldmap\" width=\"100%\" height=\"500px\" frameborder=\"0\"></iframe>\n",
+        "storeOutMessages": true,
+        "fwdInMessages": true,
+        "resendOnRefresh": true,
+        "templateScope": "local",
+        "className": "",
+        "x": 840,
+        "y": 140,
+        "wires": [
+            []
+        ]
+    },
+    {
+        "id": "75d5c1407ac31f64",
+        "type": "inject",
+        "z": "860da52be7e9f978",
+        "d": true,
+        "name": "",
+        "props": [
+            {
+                "p": "payload"
+            },
+            {
+                "p": "topic",
+                "vt": "str"
+            }
+        ],
+        "repeat": "",
+        "crontab": "",
+        "once": false,
+        "onceDelay": 0.1,
+        "topic": "",
+        "payload": "{   \"lat\": 41.795000,   \"lon\": -6.772000 }",
+        "payloadType": "json",
+        "x": 70,
+        "y": 120,
+        "wires": [
+            [
+                "bc783eb4404ebad9"
+            ]
+        ]
+    },
+    {
+        "id": "12a3455fabad5263",
+        "type": "inject",
+        "z": "860da52be7e9f978",
+        "d": true,
+        "name": "",
+        "props": [
+            {
+                "p": "payload"
+            },
+            {
+                "p": "topic",
+                "vt": "str"
+            }
+        ],
+        "repeat": "",
+        "crontab": "",
+        "once": false,
+        "onceDelay": 0.1,
+        "topic": "",
+        "payload": "{   \"lat\": 41.796583,   \"lon\": -6.769472 }",
+        "payloadType": "json",
+        "x": 70,
+        "y": 180,
+        "wires": [
+            [
+                "bc783eb4404ebad9"
+            ]
+        ]
+    },
+    {
+        "id": "65dd5b0f1091a138",
+        "type": "function",
+        "z": "860da52be7e9f978",
+        "name": "Calc 7d Durations",
+        "func": "let logs = msg.payload;\nlet dailyDurations = {};\nlet insideTime = null;\n\nlogs.forEach(entry => {\n  let t = new Date(entry._time);\n  let ds = t.toISOString().slice(0, 10);\n\n  if (entry._value === \"INSIDE\") {\n    insideTime = t;\n  }\n  else if (entry._value === \"OUTSIDE\" && insideTime) {\n    let mins = Math.round((t - insideTime) / 60000);\n    if (mins > 0 && mins < 12 * 60) {\n      dailyDurations[ds] = (dailyDurations[ds] || 0) + mins;\n    }\n    insideTime = null;\n  }\n});\n\n// Agar last event INSIDE hai to uska duration aaj tak add karo\nif (insideTime) {\n  let now = new Date();\n  let insideDate = insideTime.toISOString().slice(0, 10);\n  let todayStr = now.toISOString().slice(0, 10);\n\n  // Agar INSIDE event ka date aaj ke barabar hai, to pura duration add karo\n  // Agar INSIDE time kisi purane date ka hai aur abhi tak OUTSIDE nahi aaya, us case me us date ke liye duration calculate karna thoda complex hota hai (split karna pade)\n  if (insideDate === todayStr) {\n    let liveMins = Math.round((now - insideTime) / 60000);\n    if (liveMins > 0 && liveMins < 12 * 60) {\n      dailyDurations[todayStr] = (dailyDurations[todayStr] || 0) + liveMins;\n    }\n  } else {\n    // Optional: agar INSIDE time purani date ka hai aur OUTSIDE nahi aya, \n    // toh wo purane din ke liye poora 12 ghante ya ab tak ka duration add karne ka logic yahan bana sakte ho\n  }\n}\n\nmsg.payload = dailyDurations;\nreturn msg;\n\n\n\n\n\n\n\n",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 3,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 570,
+        "y": 480,
+        "wires": [
+            [
+                "e67c7a746985c819"
+            ]
+        ]
+    },
+    {
+        "id": "d0ef8be06a1b34b3",
+        "type": "ui_chart",
+        "z": "860da52be7e9f978",
+        "name": "",
+        "group": "529104bb4ca6e70b",
+        "order": 0,
+        "width": "12",
+        "height": "6",
+        "label": "chart",
+        "chartType": "bar",
+        "legend": "true",
+        "xformat": "D/M",
+        "interpolate": "linear",
+        "nodata": "",
+        "dot": false,
+        "ymin": "0",
+        "ymax": "4",
+        "removeOlder": "7",
+        "removeOlderPoints": "",
+        "removeOlderUnit": "86400",
+        "cutout": 0,
+        "useOneColor": false,
+        "useUTC": false,
+        "colors": [
+            "#1f77b4",
+            "#aec7e8",
+            "#ff7f0e",
+            "#2ca02c",
+            "#98df8a",
+            "#d62728",
+            "#ff9896",
+            "#9467bd",
+            "#c5b0d5"
+        ],
+        "outputs": 1,
+        "useDifferentColor": false,
+        "className": "",
+        "x": 890,
+        "y": 520,
+        "wires": [
+            []
+        ]
+    },
+    {
+        "id": "e67c7a746985c819",
+        "type": "function",
+        "z": "860da52be7e9f978",
+        "name": "Chart Prep",
+        "func": "let durations = msg.payload;   // { \"2025-05-17\":18, \"2025-05-19\":45, \"2025-05-22\":3 }\nlet today = new Date();\nlet labels = [];\nlet values = [];\n\nfor (let i = 6; i >= 0; i--) {\n    let d = new Date(today);\n    d.setDate(today.getDate() - i);\n    let ds = d.toISOString().slice(0, 10);  // \"YYYY-MM-DD\"\n\n    labels.push(ds);\n\n    // convert minutes to hours (rounded to 2 decimals)\n    let mins = durations[ds] || 0;\n    let hrs = Math.round((mins / 60) * 100) / 100;\n    values.push(hrs);\n}\n\nmsg.payload = [{\n    series: [\"Work Duration (h)\"],\n    data: [values],\n    labels: labels\n}];\nreturn msg;\n",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 770,
+        "y": 480,
+        "wires": [
+            [
+                "d0ef8be06a1b34b3"
+            ]
+        ]
+    },
+    {
+        "id": "a31e4843d454beb1",
+        "type": "influxdb out",
+        "z": "860da52be7e9f978",
+        "influxdb": "69ac502540fef7ab",
+        "name": "",
+        "measurement": "attendance",
+        "precision": "",
+        "retentionPolicy": "",
+        "database": "database",
+        "precisionV18FluxV20": "ms",
+        "retentionPolicyV18Flux": "",
+        "org": "IPB",
+        "bucket": "iot_attendance",
+        "x": 710,
+        "y": 260,
+        "wires": []
+    },
+    {
+        "id": "2cc9231e2ddbe164",
+        "type": "function",
+        "z": "860da52be7e9f978",
+        "name": "function 15",
+        "func": "let data = msg.payload;\n\nmsg.payload = {\n    lat: data.lat,\n    lon: data.lon,\n    timestamp: data.timestamp,\n    status: data.currentStatus || \"UNKNOWN\"   // 👈 FIELD ban gaya!\n};\n\nmsg.measurement = \"attendance\";\n\nreturn msg;\n\n",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 430,
+        "y": 260,
+        "wires": [
+            [
+                "a31e4843d454beb1"
+            ]
+        ]
+    },
+    {
+        "id": "dddf563e04beba8b",
+        "type": "e-mail",
+        "z": "860da52be7e9f978",
+        "server": "smtp.gmail.com",
+        "port": "465",
+        "authtype": "BASIC",
+        "saslformat": true,
+        "token": "oauth2Response.access_token",
+        "secure": true,
+        "tls": true,
+        "name": "daditya787@gmail.com",
+        "dname": "",
+        "x": 630,
+        "y": 340,
+        "wires": []
+    },
+    {
+        "id": "abc9db6fc285ec0e",
+        "type": "function",
+        "z": "860da52be7e9f978",
+        "name": "function 16",
+        "func": "const durations = global.get(\"workDurations\") || {};\nconst today = new Date().toISOString().slice(0, 10);\nconst durationToday = durations[today] || 0;\n\nconst expected = 8; // Expected hours\n\nif (durationToday < expected) {\n    msg.payload = `Worked less than expected (${durationToday}h < ${expected}h)`;\n} else if (durationToday > expected) {\n    msg.payload = `Worked more than expected (${durationToday}h > ${expected}h)`;\n} else {\n    msg.payload = `Worked as expected (${durationToday}h)`;\n}\nreturn msg;\n",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 410,
+        "y": 340,
+        "wires": [
+            [
+                "dddf563e04beba8b"
+            ]
+        ]
+    },
+    {
+        "id": "e3dba7a58a0eb18f",
+        "type": "influxdb in",
+        "z": "860da52be7e9f978",
+        "influxdb": "483b1aa579435d89",
+        "name": "",
+        "query": "from(bucket: \"iot_attendance\")\n  |> range(start: -7d)\n  |> filter(fn: (r) => r._measurement == \"attendance\")\n  |> filter(fn: (r) => r._field == \"status\")\n  |> sort(columns: [\"_time\"])\n\n\n\n\n\n\n\n\n\n\n",
+        "rawOutput": false,
+        "precision": "",
+        "retentionPolicy": "",
+        "org": "IPB",
+        "x": 330,
+        "y": 480,
+        "wires": [
+            [
+                "65dd5b0f1091a138"
+            ]
+        ]
+    },
+    {
+        "id": "85d736317c243127",
+        "type": "inject",
+        "z": "860da52be7e9f978",
+        "name": "",
+        "props": [
+            {
+                "p": "payload"
+            },
+            {
+                "p": "topic",
+                "vt": "str"
+            }
+        ],
+        "repeat": "",
+        "crontab": "",
+        "once": false,
+        "onceDelay": 0.1,
+        "topic": "",
+        "payload": "",
+        "payloadType": "date",
+        "x": 100,
+        "y": 480,
+        "wires": [
+            [
+                "e3dba7a58a0eb18f"
+            ]
+        ]
+    },
+    {
+        "id": "61e65b2d68e865f6",
+        "type": "inject",
+        "z": "860da52be7e9f978",
+        "name": "",
+        "props": [
+            {
+                "p": "payload"
+            },
+            {
+                "p": "topic",
+                "vt": "str"
+            }
+        ],
+        "repeat": "",
+        "crontab": "",
+        "once": false,
+        "onceDelay": 0.1,
+        "topic": "",
+        "payload": "",
+        "payloadType": "date",
+        "x": 100,
+        "y": 560,
+        "wires": [
+            [
+                "6aef8681deb6f146"
+            ]
+        ]
+    },
+    {
+        "id": "6aef8681deb6f146",
+        "type": "influxdb in",
+        "z": "860da52be7e9f978",
+        "influxdb": "07e895ce16a5f02b",
+        "name": "",
+        "query": "from(bucket: \"iot_attendance\")\n  |> range(start: -7d)\n  |> filter(fn: (r) => r._measurement == \"attendance\")\n  |> filter(fn: (r) => r._field == \"status\")\n  |> sort(columns: [\"_time\"])\n",
+        "rawOutput": false,
+        "precision": "",
+        "retentionPolicy": "",
+        "org": "IPB",
+        "x": 310,
+        "y": 560,
+        "wires": [
+            [
+                "ad2152b7d03c93c8"
+            ]
+        ]
+    },
+    {
+        "id": "ad2152b7d03c93c8",
+        "type": "function",
+        "z": "860da52be7e9f978",
+        "name": "function 17",
+        "func": "let totalInsideDurationMs = 0;\nlet lastInsideTimestamp = null;\n\nfor (let i = 0; i < msg.payload.length; i++) {\n    let event = msg.payload[i];\n    let eventTime = new Date(event._time).getTime();\n    let status = event._value;  // INSIDE ya OUTSIDE\n\n    if (status === \"INSIDE\") {\n        if (lastInsideTimestamp === null) {\n            // INSIDE period start\n            lastInsideTimestamp = eventTime;\n        }\n    } else {\n        // Status OUTSIDE, INSIDE period khatam\n        if (lastInsideTimestamp !== null) {\n            totalInsideDurationMs += (eventTime - lastInsideTimestamp);\n            lastInsideTimestamp = null;\n        }\n    }\n}\n\n// Agar abhi bhi INSIDE hai (last status INSIDE tha)\nif (lastInsideTimestamp !== null) {\n    totalInsideDurationMs += (Date.now() - lastInsideTimestamp);\n}\n\n// Convert to minutes\nlet totalInsideMinutes = Math.floor(totalInsideDurationMs / 60000);\n\nmsg.payload = totalInsideMinutes;\nreturn msg;   ",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 530,
+        "y": 560,
+        "wires": [
+            [
+                "fadefa92f857b0f0"
+            ]
+        ]
+    },
+    {
+        "id": "fadefa92f857b0f0",
+        "type": "ui_gauge",
+        "z": "860da52be7e9f978",
+        "name": "",
+        "group": "824f8db59d11d512",
+        "order": 1,
+        "width": "5",
+        "height": "3",
+        "gtype": "gage",
+        "title": "",
+        "label": "min",
+        "format": "{{value}}",
+        "min": 0,
+        "max": "1000",
+        "colors": [
+            "#00b500",
+            "#e6e600",
+            "#ca3838"
+        ],
+        "seg1": "4",
+        "seg2": "8",
+        "diff": false,
+        "className": ".sexy-gauge .nr-dashboard-template .nr-dashboard-gauge {   font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;   font-weight: 700;   font-size: 16px;   color: #2c3e50; }  .sexy-gauge .nr-dashboard-gauge .nr-dashboard-gauge-label {   font-size: 18px;   color: #3498db;   font-weight: 700; }  .sexy-gauge .nr-dashboard-gauge .nr-dashboard-gauge-value {   color: #e74c3c;   font-size: 22px;   font-weight: bold; }  .sexy-gauge .nr-dashboard-gauge .nr-dashboard-gauge-units {   font-style: italic;   color: #95a5a6; }",
+        "x": 750,
+        "y": 560,
+        "wires": []
+    },
+    {
+        "id": "9508d34c7f1d651f",
+        "type": "function",
+        "z": "860da52be7e9f978",
+        "name": "function 18",
+        "func": "msg.payload = {\n    name: \"Workplace Zone\",\n    lat: 41.7967,\n    lon: -6.769569,\n    radius: 50,\n    icon: \"circle\",\n    color: \"#0000FF\",\n    fillColor: \"#0000FF\",\n    fillOpacity: 0.3,\n    layer: \"GeoFence\"\n};\nreturn msg;\n",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 670,
+        "y": 180,
+        "wires": [
+            [
+                "c3525deb04013ab4"
+            ]
+        ]
+    },
+    {
+        "id": "890d33631a4881ab",
+        "type": "mqtt-broker",
+        "name": "",
+        "broker": "broker.emqx.io",
+        "port": 1883,
+        "clientid": "",
+        "autoConnect": true,
+        "usetls": false,
+        "protocolVersion": 4,
+        "keepalive": 60,
+        "cleansession": true,
+        "autoUnsubscribe": true,
+        "birthTopic": "",
+        "birthQos": "0",
+        "birthRetain": "false",
+        "birthPayload": "",
+        "birthMsg": {},
+        "closeTopic": "",
+        "closeQos": "0",
+        "closeRetain": "false",
+        "closePayload": "",
+        "closeMsg": {},
+        "willTopic": "",
+        "willQos": "0",
+        "willRetain": "false",
+        "willPayload": "",
+        "willMsg": {},
+        "userProps": "",
+        "sessionExpiry": ""
+    },
+    {
+        "id": "e100234ed5498555",
+        "type": "ui_group",
+        "name": "Live Status",
+        "tab": "a4de54abbb6cac38",
+        "order": 1,
+        "disp": true,
+        "width": 6,
+        "collapse": false,
+        "className": ""
+    },
+    {
+        "id": "61ca522673ac8241",
+        "type": "ui_group",
+        "name": "logs",
+        "tab": "a4de54abbb6cac38",
+        "order": 3,
+        "disp": true,
+        "width": 6,
+        "collapse": false,
+        "className": ""
+    },
+    {
+        "id": "a3df0cc256300f37",
+        "type": "ui_group",
+        "name": "Map View",
+        "tab": "06f648e54f8d4d04",
+        "order": 1,
+        "disp": true,
+        "width": 6,
+        "collapse": false,
+        "className": ""
+    },
+    {
+        "id": "529104bb4ca6e70b",
+        "type": "ui_group",
+        "name": "work  chart ",
+        "tab": "a4de54abbb6cac38",
+        "order": 2,
+        "disp": true,
+        "width": "24",
+        "collapse": false,
+        "className": ""
+    },
+    {
+        "id": "69ac502540fef7ab",
+        "type": "influxdb",
+        "hostname": "127.0.0.1",
+        "port": 8086,
+        "protocol": "http",
+        "database": "database",
+        "name": "",
+        "usetls": false,
+        "tls": "",
+        "influxdbVersion": "2.0",
+        "url": "http://localhost:8086",
+        "timeout": 10,
+        "rejectUnauthorized": true
+    },
+    {
+        "id": "483b1aa579435d89",
+        "type": "influxdb",
+        "hostname": "127.0.0.1",
+        "port": 8086,
+        "protocol": "http",
+        "database": "database",
+        "name": "",
+        "usetls": false,
+        "tls": "",
+        "influxdbVersion": "2.0",
+        "url": "http://localhost:8086",
+        "timeout": 10,
+        "rejectUnauthorized": true
+    },
+    {
+        "id": "07e895ce16a5f02b",
+        "type": "influxdb",
+        "hostname": "127.0.0.1",
+        "port": 8086,
+        "protocol": "http",
+        "database": "iot_attendance",
+        "name": "",
+        "usetls": false,
+        "tls": "",
+        "influxdbVersion": "2.0",
+        "url": "http://localhost:8086",
+        "timeout": 10,
+        "rejectUnauthorized": true
+    },
+    {
+        "id": "824f8db59d11d512",
+        "type": "ui_group",
+        "name": "mean work time ",
+        "tab": "a4de54abbb6cac38",
+        "order": 4,
+        "disp": true,
+        "width": 6,
+        "collapse": false,
+        "className": ""
+    },
+    {
+        "id": "a4de54abbb6cac38",
+        "type": "ui_tab",
+        "name": "Final IOT Dashboard",
+        "icon": "dashboard",
+        "order": 3,
+        "disabled": false,
+        "hidden": false
+    },
+    {
+        "id": "06f648e54f8d4d04",
+        "type": "ui_tab",
+        "name": "Live Location Map",
+        "icon": "dashboard",
+        "order": 4,
+        "disabled": false,
+        "hidden": false
+    }
+]
